@@ -14,7 +14,6 @@ export function ImportReview({ open, image, rec, onCancel, onAccept }: {
   const [r, setR] = useState<Recognition | null>(rec);
   const [tab, setTab] = useState<"nodes" | "wires">("nodes");
   const [onlyFlagged, setOnlyFlagged] = useState(false);
-  if (rec && r?.title !== rec.title && r?.nodes !== rec.nodes && r === null) setR(rec);
   const cur = r ?? rec;
   if (!cur) return null;
   const upd = (fn: (x: Recognition) => void) => { const c = structuredClone(cur); fn(c); setR(c); };
