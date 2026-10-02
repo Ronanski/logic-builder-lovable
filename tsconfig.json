@@ -2,11 +2,15 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
+    "src/**/*.js",
+    "src/**/*.jsx",
     "vite.config.ts",
     "vitest.config.ts",
     "eslint.config.js"
   ],
   "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
     "target": "ES2022",
     "jsx": "react-jsx",
     "module": "ESNext",
@@ -26,8 +30,8 @@
     "noImplicitOverride": true,
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": true,
-    "noUncheckedIndexedAccess": false,
-    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
     "noUncheckedSideEffectImports": true,
     "paths": {
       "@/*": ["./src/*"]

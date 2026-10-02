@@ -1,16 +1,12 @@
-# Logic Weaver
+# Project Phoenix
 
-meron kaming dcs logic diagram. gsto ko sana ito gawan ng app na interactive. as u can see there are pages reference (from/to), tags addresses, service inputs/outputs, and the logic interlocks diagram. the file i only have is, pdf and dwg file. i have 130 diagrams same templates as this one. but we can try to test only one for building purposes. so the webapp will have multiple dcs logic pages, thru importing pdf or dwg. the catch is, the logic symbols are made from lines, arcs, connected together to create a symbol. they are not a block as a whole. so can we do it? how? any method?
-
-if you build that, am i able to import another diagram?
-
-i want to be like a foxboro dark themed, with details/information when clicking the inputs or outputs. is the input click allowed multiple select ? (multiple trigger state conditions?) for simulation function.?
+papaalis ko sana ang base44 dependencies. front end at back end. wag babaguhin functionality, wag babaguhin UI layout and design. simulan sa pagpalit ng database at authentication, habang pinananatili ang kasalukuyang UI at functionality.
 
 This project was built with [Lovable](https://lovable.dev).
 
 ## Build with Lovable
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/2bb8d414-5a90-4079-b727-a1bf817acbc0).
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/dce4d12a-e751-4364-b345-363948dcd84b).
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
 - **Stay in sync**: every change made in Lovable is committed straight to this repository.
