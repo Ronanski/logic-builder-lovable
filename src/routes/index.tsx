@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Upload, Download, Maximize, Minimize, ZoomIn, ZoomOut, Scan, Crosshair, Sun, Moon, Play, Wrench, BookOpen,
   PanelLeft, PanelRight, RotateCcw, FilePlus, Loader2, Search, X, ListTree,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, Group, Ungroup, Copy, ClipboardPaste, CopyPlus, Trash2, Scissors, Radio, Power,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Canvas, type CanvasHandle } from "@/components/dcs/Canvas";
@@ -10,11 +12,11 @@ import { Inspector } from "@/components/dcs/Inspector";
 import { ImportReview } from "@/components/dcs/ImportReview";
 import { GlyphPreview } from "@/components/dcs/Glyph";
 import { emptySim, step, trace, type SimState } from "@/lib/logic/engine";
-import { inputCount, isSink, isSource, newNode, nodeSize, SOURCE_LABEL, SYMBOLS, type SymbolCategory } from "@/lib/logic/library";
+import { GATE_STYLES, inputCount, isSink, isSource, newNode, nodeSize, SOURCE_LABEL, SYMBOLS, type SymbolCategory } from "@/lib/logic/library";
 import { sampleDiagram } from "@/lib/logic/sample";
 import { recognizeImage, recognitionToDiagram, type Recognition } from "@/lib/logic/recognize";
 import { fileToDataUrl, renderDxfToImage } from "@/lib/logic/dxf";
-import type { Diagram, LogicNode, Selection } from "@/lib/logic/types";
+import type { Diagram, GateStyle, LogicNode, Selection, Wire } from "@/lib/logic/types";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -32,10 +34,34 @@ export const Route = createFileRoute("/")({
 
 const STORE = "logictrace:diagram";
 type LogEntry = { t: number; id: string; text: string; on: boolean };
+type Clip = { nodes: LogicNode[]; wires: Wire[] };
+type SyncMsg = { from: string; kind: "diagram"; d: Diagram } | { from: string; kind: "forced"; forced: Record<string, boolean> } | { from: string; kind: "hello" | "here" };
+const uid = () => Math.random().toString(36).slice(2, 9);
+const TAB = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : uid();
+
+/** Copy nodes + the wires between them, giving everything fresh ids. */
+function cloneElements(clip: Clip, dx: number, dy: number): Clip {
+  const ids = new Map<string, string>(), groups = new Map<string, string>();
+  const nodes = clip.nodes.map((n) => {
+    const id = `n${uid()}`; ids.set(n.id, id);
+    const group = n.group ? (groups.get(n.group) ?? (groups.set(n.group, `g${uid()}`), groups.get(n.group))) : undefined;
+    return { ...n, id, x: n.x + dx, y: n.y + dy, group, addresses: [...n.addresses] };
+  });
+  const wires = clip.wires.filter((w) => ids.has(w.from) && ids.has(w.to)).map((w) => ({ ...w, id: `w${uid()}`, from: ids.get(w.from)!, to: ids.get(w.to)! }));
+  return { nodes, wires };
+}
 
 function Workspace() {
   const [d, setD] = useState<Diagram>(() => sampleDiagram());
-  const [sel, setSel] = useState<Selection>(null);
+  const [sel, setSelRaw] = useState<Selection>(null);
+  const [selIds, setSelIds] = useState<Set<string>>(new Set());
+  const [peers, setPeers] = useState(0);
+  const clip = useRef<Clip | null>(null);
+  const pasteN = useRef(0);
+  const chan = useRef<BroadcastChannel | null>(null);
+  const remote = useRef(false);
+  const groupOf = (id: string, nodes = d.nodes) => { const n = nodes.find((k) => k.id === id); return n?.group ? nodes.filter((k) => k.group === n.group).map((k) => k.id) : [id]; };
+  const setSel = (s: Selection) => { setSelRaw(s); setSelIds(new Set(s?.kind === "node" ? groupOf(s.id) : [])); };
   const [mode, setMode] = useState<"build" | "simulate">("simulate");
   const [autoFit, setAutoFit] = useState(true);
   const [dark, setDark] = useState(true);
@@ -96,9 +122,33 @@ function Workspace() {
 
   const tr = useMemo(() => trace(d, sel), [d, sel]);
 
-  const press = useCallback((id: string, down: boolean) => { forced.current = { ...forced.current, [id]: down }; }, []);
-  const toggle = useCallback((id: string) => { forced.current = { ...forced.current, [id]: !forced.current[id] }; }, []);
-  const resetSim = () => { forced.current = {}; setSim(emptySim()); setLog([]); };
+  const post = (m: Omit<SyncMsg, "from"> & Record<string, unknown>) => chan.current?.postMessage({ ...m, from: TAB });
+  const setForced = useCallback((f: Record<string, boolean>) => { forced.current = f; chan.current?.postMessage({ kind: "forced", forced: f, from: TAB }); }, []);
+  const press = useCallback((id: string, down: boolean) => setForced({ ...forced.current, [id]: down }), [setForced]);
+  const toggle = useCallback((id: string) => setForced({ ...forced.current, [id]: !forced.current[id] }), [setForced]);
+  const resetSim = () => { setForced({}); setSim(emptySim()); setLog([]); };
+
+  // real-time sync between open tabs / windows of this app
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const c = new BroadcastChannel("logictrace-sync"); chan.current = c;
+    const seen = new Map<string, number>();
+    c.onmessage = (ev: MessageEvent<SyncMsg>) => {
+      const m = ev.data; if (!m || m.from === TAB) return;
+      seen.set(m.from, Date.now());
+      if (m.kind === "hello") c.postMessage({ kind: "here", from: TAB });
+      if (m.kind === "diagram") { remote.current = true; setD(m.d); }
+      if (m.kind === "forced") forced.current = m.forced;
+      setPeers([...seen.values()].filter((t) => Date.now() - t < 6000).length);
+    };
+    c.postMessage({ kind: "hello", from: TAB });
+    const ping = setInterval(() => { c.postMessage({ kind: "here", from: TAB }); setPeers([...seen.values()].filter((t) => Date.now() - t < 6000).length); }, 2500);
+    return () => { clearInterval(ping); c.close(); chan.current = null; };
+  }, []);
+  useEffect(() => {
+    if (remote.current) { remote.current = false; return; }
+    post({ kind: "diagram", d });
+  }, [d]);
 
   const updateNode = (id: string, patch: Partial<LogicNode>) =>
     setD((x) => {
@@ -106,16 +156,103 @@ function Workspace() {
       const n = nodes.find((k) => k.id === id)!;
       return { ...x, nodes, wires: x.wires.filter((w) => w.to !== id || w.toPort < inputCount(n)) };
     });
+  const moveMany = (moves: { id: string; x: number; y: number }[]) => {
+    const m = new Map(moves.map((k) => [k.id, k]));
+    setD((x) => ({ ...x, nodes: x.nodes.map((n) => { const k = m.get(n.id); return k ? { ...n, x: k.x, y: k.y } : n; }) }));
+  };
+  const selectedNodes = () => d.nodes.filter((n) => selIds.has(n.id));
   const del = () => {
-    if (!sel) return;
-    setD((x) => sel.kind === "node"
-      ? { ...x, nodes: x.nodes.filter((n) => n.id !== sel.id), wires: x.wires.filter((w) => w.from !== sel.id && w.to !== sel.id) }
-      : { ...x, wires: x.wires.filter((w) => w.id !== sel.id) });
+    if (sel?.kind === "wire" && !selIds.size) { setD((x) => ({ ...x, wires: x.wires.filter((w) => w.id !== sel.id) })); setSel(null); return; }
+    if (!selIds.size) return;
+    setD((x) => ({ ...x, nodes: x.nodes.filter((n) => !selIds.has(n.id)), wires: x.wires.filter((w) => !selIds.has(w.from) && !selIds.has(w.to)) }));
     setSel(null);
   };
+  const copy = () => {
+    const nodes = selectedNodes(); if (!nodes.length) return false;
+    const ids = new Set(nodes.map((n) => n.id));
+    clip.current = { nodes: structuredClone(nodes), wires: d.wires.filter((w) => ids.has(w.from) && ids.has(w.to)).map((w) => ({ ...w })) };
+    pasteN.current = 0;
+    try { localStorage.setItem("logictrace:clipboard", JSON.stringify(clip.current)); } catch { /* ignore */ }
+    toast.success(`Copied ${nodes.length} element${nodes.length > 1 ? "s" : ""}`);
+    return true;
+  };
+  const paste = (src?: Clip) => {
+    let c = src ?? clip.current;
+    if (!c) { try { const j = localStorage.getItem("logictrace:clipboard"); if (j) c = JSON.parse(j); } catch { /* ignore */ } }
+    if (!c?.nodes.length) return;
+    pasteN.current += 1;
+    const off = 30 * pasteN.current;
+    const out = cloneElements(c, off, off);
+    setMode("build");
+    setD((x) => ({ ...x, nodes: [...x.nodes, ...out.nodes], wires: [...x.wires, ...out.wires] }));
+    setSelRaw(out.nodes[0] ? { kind: "node", id: out.nodes[0].id } : null);
+    setSelIds(new Set(out.nodes.map((n) => n.id)));
+  };
+  const duplicate = () => { const nodes = selectedNodes(); if (!nodes.length) return; const ids = new Set(nodes.map((n) => n.id)); pasteN.current = 0; paste({ nodes, wires: d.wires.filter((w) => ids.has(w.from) && ids.has(w.to)) }); };
+  const groupSel = () => {
+    if (selIds.size < 2) return; const g = `g${uid()}`;
+    setD((x) => ({ ...x, nodes: x.nodes.map((n) => (selIds.has(n.id) ? { ...n, group: g } : n)) }));
+    toast.success("Grouped");
+  };
+  const ungroupSel = () => setD((x) => ({ ...x, nodes: x.nodes.map((n) => (selIds.has(n.id) ? { ...n, group: undefined } : n)) }));
+  type AlignKind = "left" | "center" | "right" | "top" | "middle" | "bottom" | "hdist" | "vdist";
+  const align = (k: AlignKind) => {
+    const ns = selectedNodes(); if (ns.length < 2) return;
+    const box = ns.map((n) => ({ n, ...nodeSize(n) }));
+    const minX = Math.min(...box.map((b) => b.n.x)), maxX = Math.max(...box.map((b) => b.n.x + b.w));
+    const minY = Math.min(...box.map((b) => b.n.y)), maxY = Math.max(...box.map((b) => b.n.y + b.h));
+    const moves: { id: string; x: number; y: number }[] = [];
+    if (k === "hdist" || k === "vdist") {
+      const h = k === "hdist";
+      const sorted = [...box].sort((a, b) => (h ? a.n.x + a.w / 2 - (b.n.x + b.w / 2) : a.n.y + a.h / 2 - (b.n.y + b.h / 2)));
+      const first = sorted[0]!, last = sorted[sorted.length - 1]!;
+      const c0 = h ? first.n.x + first.w / 2 : first.n.y + first.h / 2, c1 = h ? last.n.x + last.w / 2 : last.n.y + last.h / 2;
+      sorted.forEach((b, i) => {
+        const c = c0 + ((c1 - c0) * i) / (sorted.length - 1);
+        moves.push(h ? { id: b.n.id, x: Math.round(c - b.w / 2), y: b.n.y } : { id: b.n.id, x: b.n.x, y: Math.round(c - b.h / 2) });
+      });
+    } else for (const b of box) {
+      let { x, y } = b.n;
+      if (k === "left") x = minX; if (k === "right") x = maxX - b.w; if (k === "center") x = Math.round((minX + maxX) / 2 - b.w / 2);
+      if (k === "top") y = minY; if (k === "bottom") y = maxY - b.h; if (k === "middle") y = Math.round((minY + maxY) / 2 - b.h / 2);
+      moves.push({ id: b.n.id, x, y });
+    }
+    moveMany(moves);
+  };
+  const onNodeClick = (id: string, additive: boolean) => {
+    const g = groupOf(id);
+    if (!additive) { setSel({ kind: "node", id }); return; }
+    setSelIds((cur) => {
+      const next = new Set(cur);
+      const has = g.every((k) => next.has(k));
+      g.forEach((k) => (has ? next.delete(k) : next.add(k)));
+      return next;
+    });
+    setSelRaw({ kind: "node", id });
+  };
+  const onMarquee = (ids: string[], additive: boolean) => {
+    const all = new Set(additive ? selIds : []);
+    ids.forEach((id) => groupOf(id).forEach((k) => all.add(k)));
+    setSelIds(all);
+    const first = [...all][0];
+    setSelRaw(first ? { kind: "node", id: first } : null);
+  };
+  const selectedInputs = d.nodes.filter((n) => selIds.has(n.id) && isSource(n.type) && n.type !== "PB");
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest("input,textarea,select")) return;
+      const mod = e.ctrlKey || e.metaKey, key = e.key.toLowerCase();
+      if (mod && key === "c") { if (copy()) e.preventDefault(); return; }
+      if (mod && key === "x" && mode === "build") { if (copy()) { del(); e.preventDefault(); } return; }
+      if (mod && key === "v") { e.preventDefault(); paste(); return; }
+      if (mod && key === "d") { e.preventDefault(); duplicate(); return; }
+      if (mod && key === "a") { e.preventDefault(); setSelIds(new Set(d.nodes.map((n) => n.id))); return; }
+      if (mod && key === "g" && mode === "build") { e.preventDefault(); if (e.shiftKey) ungroupSel(); else groupSel(); return; }
+      if (mode === "build" && selIds.size && e.key.startsWith("Arrow")) {
+        e.preventDefault(); const st = e.shiftKey ? 50 : 10;
+        const dx = e.key === "ArrowLeft" ? -st : e.key === "ArrowRight" ? st : 0, dy = e.key === "ArrowUp" ? -st : e.key === "ArrowDown" ? st : 0;
+        moveMany(selectedNodes().map((n) => ({ id: n.id, x: n.x + dx, y: n.y + dy }))); return;
+      }
       if ((e.key === "Delete" || e.key === "Backspace") && mode === "build") del();
       if (e.key === "Escape") setSel(null);
       if (e.key === "f") canvasRef.current?.fit();
@@ -194,6 +331,17 @@ function Workspace() {
           <button onClick={() => setMode("simulate")} className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium ${mode === "simulate" ? "bg-signal-on text-signal-on-foreground" : "text-muted-foreground"}`}><Play className="h-3.5 w-3.5" /><span className="hidden md:inline">Simulate</span></button>
         </div>
         <div className="flex-1" />
+        <span title={peers ? `Live-synced with ${peers} other open window${peers > 1 ? "s" : ""}` : "Open this app in another tab or window to sync in real time"}
+          className={`hidden items-center gap-1 rounded-md border px-2 py-1 font-mono text-[10px] lg:flex ${peers ? "border-signal-on/50 text-signal-on" : "text-muted-foreground"}`}>
+          <Radio className="h-3 w-3" />{peers ? `SYNC · ${peers + 1}` : "SYNC READY"}
+        </span>
+        <label className="hidden items-center gap-1 text-[11px] text-muted-foreground md:flex" title="Logic gate symbol style">
+          Gates
+          <select aria-label="Logic gate symbol style" value={d.gateStyle ?? "dcs"} onChange={(e) => setD((x) => ({ ...x, gateStyle: e.target.value as GateStyle }))}
+            className="rounded-md border bg-background px-1.5 py-1 text-xs text-foreground outline-none">
+            {GATE_STYLES.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </label>
         <button onClick={() => fileRef.current?.click()} disabled={!!busy} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}<span className="hidden sm:inline">Import</span>
         </button>
@@ -218,7 +366,40 @@ function Workspace() {
         <main ref={stageRef} className="relative flex min-w-0 flex-1 flex-col bg-canvas">
           <div className="relative min-h-0 flex-1">
             <Canvas ref={canvasRef} diagram={d} sim={sim} mode={mode} selection={sel} traceSets={tr} autoFit={autoFit} now={now}
-              onSelect={setSel} onMove={(id, x, y) => updateNode(id, { x, y })} onConnect={connect} onPress={press} onToggle={toggle} />
+              onSelect={setSel} selectedIds={selIds} onNodeClick={onNodeClick} onMarquee={onMarquee} onMoveMany={moveMany}
+              onConnect={connect} onPress={press} onToggle={toggle} />
+            {(selIds.size > 0 || clip.current) && (
+              <div className="absolute left-1/2 top-3 z-10 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center gap-0.5 rounded-lg border bg-card/95 p-1 shadow-lg backdrop-blur">
+                {selIds.size > 0 && <span className="px-2 font-mono text-[11px] text-muted-foreground">{selIds.size} selected</span>}
+                {mode === "build" && selIds.size > 1 && <>
+                  <Sep />
+                  <IconBtn label="Align left" onClick={() => align("left")}><AlignStartVertical /></IconBtn>
+                  <IconBtn label="Align center" onClick={() => align("center")}><AlignCenterVertical /></IconBtn>
+                  <IconBtn label="Align right" onClick={() => align("right")}><AlignEndVertical /></IconBtn>
+                  <IconBtn label="Align top" onClick={() => align("top")}><AlignStartHorizontal /></IconBtn>
+                  <IconBtn label="Align middle" onClick={() => align("middle")}><AlignCenterHorizontal /></IconBtn>
+                  <IconBtn label="Align bottom" onClick={() => align("bottom")}><AlignEndHorizontal /></IconBtn>
+                  {selIds.size > 2 && <>
+                    <IconBtn label="Distribute horizontally" onClick={() => align("hdist")}><AlignHorizontalDistributeCenter /></IconBtn>
+                    <IconBtn label="Distribute vertically" onClick={() => align("vdist")}><AlignVerticalDistributeCenter /></IconBtn>
+                  </>}
+                  <Sep />
+                  <IconBtn label="Group (Ctrl+G)" onClick={groupSel}><Group /></IconBtn>
+                </>}
+                {mode === "build" && selectedNodes().some((n) => n.group) && <IconBtn label="Ungroup (Ctrl+Shift+G)" onClick={ungroupSel}><Ungroup /></IconBtn>}
+                <Sep />
+                {selIds.size > 0 && <IconBtn label="Copy (Ctrl+C)" onClick={copy}><Copy /></IconBtn>}
+                {selIds.size > 0 && mode === "build" && <IconBtn label="Cut (Ctrl+X)" onClick={() => { if (copy()) del(); }}><Scissors /></IconBtn>}
+                {clip.current && <IconBtn label="Paste (Ctrl+V)" onClick={() => paste()}><ClipboardPaste /></IconBtn>}
+                {selIds.size > 0 && <IconBtn label="Duplicate (Ctrl+D)" onClick={duplicate}><CopyPlus /></IconBtn>}
+                {selIds.size > 0 && mode === "build" && <IconBtn label="Delete (Del)" onClick={del}><Trash2 /></IconBtn>}
+                {selectedInputs.length > 1 && <>
+                  <Sep />
+                  <button onClick={() => setForced({ ...forced.current, ...Object.fromEntries(selectedInputs.map((n) => [n.id, true])) })} className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-signal-on hover:bg-accent"><Power className="h-3.5 w-3.5" />Set {selectedInputs.length} inputs</button>
+                  <button onClick={() => setForced({ ...forced.current, ...Object.fromEntries(selectedInputs.map((n) => [n.id, false])) })} className="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-accent">Clear</button>
+                </>}
+              </div>
+            )}
             {busy && (
               <div className="absolute inset-0 z-10 grid place-items-center bg-background/60 backdrop-blur-sm">
                 <div className="flex items-center gap-3 rounded-lg border bg-card px-5 py-3 text-sm shadow-lg"><Loader2 className="h-4 w-4 animate-spin text-primary" />{busy}</div>
@@ -235,7 +416,7 @@ function Workspace() {
             </div>
             <div className="pointer-events-none absolute bottom-3 left-3 hidden flex-wrap gap-3 rounded-md border bg-card/90 px-3 py-1.5 text-[11px] text-muted-foreground backdrop-blur md:flex">
               <Legend cls="bg-signal-on" t="Energized (1)" /><Legend cls="bg-trace-up" t="Upstream" /><Legend cls="bg-trace-down" t="Downstream" />
-              <span>Scroll / pinch = zoom · Shift+scroll = move · double-click = fit</span>
+              <span>Scroll / pinch = zoom · Shift+scroll = move · Shift+click / drag box = multi-select · Ctrl+C/V/D/G</span>
             </div>
           </div>
           {/* event log */}
@@ -287,7 +468,7 @@ function LeftPane({ d, sim, sel, mode, onSelect, onAdd, onToggle, onPress, force
   const [tab, setTab] = useState<"signals" | "library">("signals");
   const [q, setQ] = useState("");
   const filtered = ioNodes.filter((n) => `${n.tag} ${n.service} ${n.addresses.join(" ")}`.toLowerCase().includes(q.toLowerCase()));
-  const cats: SymbolCategory[] = ["Input", "Logic", "Timer", "Memory", "Output"];
+  const cats: SymbolCategory[] = ["Input", "Logic", "Timer", "Memory", "Output", "Annotation"];
   const valueOf = (n: LogicNode) => {
     if (isSource(n.type)) return !!sim.out[n.id]?.[0];
     const w = d.wires.find((x) => x.to === n.id);
@@ -351,7 +532,7 @@ function LeftPane({ d, sim, sel, mode, onSelect, onAdd, onToggle, onPress, force
               <div className="grid grid-cols-2 gap-1.5">
                 {Object.values(SYMBOLS).filter((s) => s.category === c).map((s) => (
                   <button key={s.type} onClick={() => onAdd(s.type)} title={s.description} className="rounded-md border bg-background p-1.5 text-left hover:border-primary hover:bg-accent">
-                    <div className="h-9 rounded bg-canvas"><GlyphPreview node={{ ...newNode(s.type, 0, 0, "p"), tag: s.type === "INPUT" || s.type === "OUTPUT" ? "TAG" : "" }} /></div>
+                    <div className="h-9 rounded bg-canvas"><GlyphPreview gateStyle={d.gateStyle} node={{ ...newNode(s.type, 0, 0, "p"), tag: s.type === "INPUT" || s.type === "OUTPUT" ? "TAG" : "" }} /></div>
                     <div className="mt-1 truncate text-[11px] font-medium">{s.name}</div>
                   </button>
                 ))}
@@ -372,4 +553,5 @@ function IconBtn({ children, label, onClick, active }: { children: React.ReactNo
     </button>
   );
 }
+const Sep = () => <span className="mx-0.5 h-5 w-px bg-border" />;
 const Legend = ({ cls, t }: { cls: string; t: string }) => <span className="flex items-center gap-1.5"><span className={`h-2 w-4 rounded-sm ${cls}`} />{t}</span>;

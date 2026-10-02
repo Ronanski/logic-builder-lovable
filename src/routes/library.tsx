@@ -18,7 +18,7 @@ export const Route = createFileRoute("/library")({
 });
 
 function LibraryPage() {
-  const cats: SymbolCategory[] = ["Input", "Logic", "Timer", "Memory", "Output"];
+  const cats: SymbolCategory[] = ["Input", "Logic", "Timer", "Memory", "Output", "Annotation"];
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <header className="sticky top-0 z-10 flex h-12 items-center gap-3 border-b bg-card px-4">

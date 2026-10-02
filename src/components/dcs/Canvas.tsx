@@ -16,7 +16,10 @@ interface Props {
   autoFit: boolean;
   now: number;
   onSelect: (s: Selection) => void;
-  onMove: (id: string, x: number, y: number) => void;
+  selectedIds: Set<string>;
+  onNodeClick: (id: string, additive: boolean) => void;
+  onMarquee: (ids: string[], additive: boolean) => void;
+  onMoveMany: (moves: { id: string; x: number; y: number }[]) => void;
   onConnect: (from: string, fromPort: number, to: string, toPort: number) => void;
   onPress: (id: string, down: boolean) => void;
   onToggle: (id: string) => void;
@@ -52,7 +55,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
   const boxRef = useRef(box); boxRef.current = box;
   const [pending, setPending] = useState<{ node: string; port: number } | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
+  const drag = useRef<{ sx: number; sy: number; origins: { id: string; x: number; y: number }[]; moved: boolean } | null>(null);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
   const [pressed, setPressed] = useState<string | null>(null);
 
   const fit = useCallback(() => setVb(boxRef.current), []);
@@ -157,7 +161,15 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
         preserveAspectRatio="xMidYMid meet"
         onPointerDown={(e) => {
           pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-          if (e.target === e.currentTarget || (e.target as Element).getAttribute("data-bg")) { p.onSelect(null); setPending(null); }
+          if (e.target === e.currentTarget || (e.target as Element).getAttribute("data-bg")) {
+            setPending(null);
+            const add = e.shiftKey || e.ctrlKey || e.metaKey;
+            if (mode === "build" && e.button === 0 && pointers.current.size === 1) {
+              const pt = toSvg(e.clientX, e.clientY);
+              setMarquee({ x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, add });
+            }
+            if (!add) p.onSelect(null);
+          }
         }}
         onPointerMove={(e) => {
           if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -170,15 +182,27 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
           }
           const pt = toSvg(e.clientX, e.clientY);
           if (pending) setCursor(pt);
+          if (marquee) setMarquee({ ...marquee, x1: pt.x, y1: pt.y });
           const dr = drag.current;
           if (dr && mode === "build") {
+            const dx = Math.round((pt.x - dr.sx) / 10) * 10, dy = Math.round((pt.y - dr.sy) / 10) * 10;
+            if (!dx && !dy && !dr.moved) return;
             dr.moved = true;
-            p.onMove(dr.id, Math.round((pt.x - dr.dx) / 10) * 10, Math.round((pt.y - dr.dy) / 10) * 10);
+            p.onMoveMany(dr.origins.map((o) => ({ id: o.id, x: o.x + dx, y: o.y + dy })));
           }
         }}
         onPointerUp={(e) => {
           pointers.current.delete(e.pointerId); pinchDist.current = null;
           drag.current = null;
+          if (marquee) {
+            const x0 = Math.min(marquee.x0, marquee.x1), x1 = Math.max(marquee.x0, marquee.x1);
+            const y0 = Math.min(marquee.y0, marquee.y1), y1 = Math.max(marquee.y0, marquee.y1);
+            if (x1 - x0 > 3 || y1 - y0 > 3) {
+              const ids = d.nodes.filter((n) => { const z = nodeSize(n); return n.x < x1 && n.x + z.w > x0 && n.y < y1 && n.y + z.h > y0; }).map((n) => n.id);
+              p.onMarquee(ids, marquee.add);
+            }
+            setMarquee(null);
+          }
           if (pressed) { p.onPress(pressed, false); setPressed(null); }
         }}
         onPointerLeave={() => { if (pressed) { p.onPress(pressed, false); setPressed(null); } }}
@@ -219,10 +243,17 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
           return <path d={`M${a.x} ${a.y} H${(a.x + cursor.x) / 2} V${cursor.y} H${cursor.x}`} fill="none" className="stroke-primary pointer-events-none" strokeDasharray="4 3" strokeWidth={1.6} />;
         })()}
 
+        {/* group outlines */}
+        {mode === "build" && [...new Set(d.nodes.map((n) => n.group).filter(Boolean))].map((g) => {
+          const ns = d.nodes.filter((n) => n.group === g);
+          const b = bbox({ ...d, nodes: ns });
+          return <rect key={g} x={b.x + 30} y={b.y + 30} width={b.w - 60} height={b.h - 60} rx={8} fill="none" className="stroke-muted-foreground pointer-events-none" strokeDasharray="2 4" strokeWidth={1} />;
+        })}
+
         {/* nodes */}
         {d.nodes.map((n) => {
           const s = nodeSize(n);
-          const isSel = selection?.kind === "node" && selection.id === n.id;
+          const isSel = p.selectedIds.has(n.id) || (selection?.kind === "node" && selection.id === n.id);
           const up = tr?.upN.has(n.id) && !isSel, down = tr?.downN.has(n.id) && !isSel;
           const src = isSource(n.type);
           const on = src ? val(n.id) : SYMBOLS[n.type].category === "Output" ? (() => { const w = d.wires.find((x) => x.to === n.id); return w ? val(w.from, w.fromPort) : false; })() : val(n.id);
@@ -235,19 +266,27 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
               )}
               <g
                 className={mode === "build" ? "cursor-move" : src ? "cursor-pointer" : "cursor-default"}
+                onDoubleClick={(e) => { if (mode === "build" && src && n.type !== "PB") { e.stopPropagation(); p.onToggle(n.id); } }}
                 onPointerDown={(e) => {
                   e.stopPropagation();
-                  p.onSelect({ kind: "node", id: n.id });
+                  const add = e.shiftKey || e.ctrlKey || e.metaKey;
                   if (mode === "build") {
                     const pt = toSvg(e.clientX, e.clientY);
-                    drag.current = { id: n.id, dx: pt.x - n.x, dy: pt.y - n.y, moved: false };
-                  } else if (src) {
+                    if (add) { p.onNodeClick(n.id, true); return; }
+                    const grp = n.group ? d.nodes.filter((k) => k.group === n.group).map((k) => k.id) : [n.id];
+                    const ids = p.selectedIds.has(n.id) ? [...new Set([...p.selectedIds, ...grp])] : grp;
+                    if (!p.selectedIds.has(n.id)) p.onNodeClick(n.id, false);
+                    drag.current = { sx: pt.x, sy: pt.y, origins: d.nodes.filter((k) => ids.includes(k.id)).map((k) => ({ id: k.id, x: k.x, y: k.y })), moved: false };
+                    return;
+                  }
+                  p.onSelect({ kind: "node", id: n.id });
+                  if (src) {
                     if (n.type === "PB") { setPressed(n.id); p.onPress(n.id, true); }
                     else p.onToggle(n.id);
                   }
                 }}
               >
-                <Glyph node={n} on={on} pressed={pressed === n.id} remaining={rem} />
+                <Glyph node={n} on={on} pressed={pressed === n.id} remaining={rem} gateStyle={d.gateStyle} />
               </g>
               {/* ports */}
               {Array.from({ length: inputCount(n) }).map((_, i) => {
@@ -282,6 +321,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(p, ref) {
             </g>
           );
         })}
+        {marquee && (
+          <rect x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)} width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)}
+            className="fill-primary/10 stroke-primary pointer-events-none" strokeDasharray="4 3" strokeWidth={1} />
+        )}
       </svg>
       {pending && (
         <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow">

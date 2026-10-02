@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LibraryRouteImport } from './routes/library'
+import { Route as ViewerRouteImport } from './routes/viewer'
 import { Route as ApiRecognizeRouteImport } from './routes/api/recognize'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const LibraryRoute = LibraryRouteImport.update({
   path: '/library',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ViewerRoute = ViewerRouteImport.update({
+  id: '/viewer',
+  path: '/viewer',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRecognizeRoute = ApiRecognizeRouteImport.update({
   id: '/api/recognize',
   path: '/api/recognize',
@@ -32,30 +38,34 @@ const ApiRecognizeRoute = ApiRecognizeRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/viewer': typeof ViewerRoute
   '/api/recognize': typeof ApiRecognizeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/viewer': typeof ViewerRoute
   '/api/recognize': typeof ApiRecognizeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/viewer': typeof ViewerRoute
   '/api/recognize': typeof ApiRecognizeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/library' | '/api/recognize'
+  fullPaths: '/' | '/library' | '/viewer' | '/api/recognize'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/library' | '/api/recognize'
-  id: '__root__' | '/' | '/library' | '/api/recognize'
+  to: '/' | '/library' | '/viewer' | '/api/recognize'
+  id: '__root__' | '/' | '/library' | '/viewer' | '/api/recognize'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LibraryRoute: typeof LibraryRoute
+  ViewerRoute: typeof ViewerRoute
   ApiRecognizeRoute: typeof ApiRecognizeRoute
 }
 
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/viewer': {
+      id: '/viewer'
+      path: '/viewer'
+      fullPath: '/viewer'
+      preLoaderRoute: typeof ViewerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/recognize': {
       id: '/api/recognize'
       path: '/api/recognize'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LibraryRoute: LibraryRoute,
+  ViewerRoute: ViewerRoute,
   ApiRecognizeRoute: ApiRecognizeRoute,
 }
 export const routeTree = rootRouteImport

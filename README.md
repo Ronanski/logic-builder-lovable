@@ -1,34 +1,16 @@
-# Logic Canvas
+# Logic Weaver
 
-gawa ka ng app na para sa dcs logic builder/simulator.
+meron kaming dcs logic diagram. gsto ko sana ito gawan ng app na interactive. as u can see there are pages reference (from/to), tags addresses, service inputs/outputs, and the logic interlocks diagram. the file i only have is, pdf and dwg file. i have 130 diagrams same templates as this one. but we can try to test only one for building purposes. so the webapp will have multiple dcs logic pages, thru importing pdf or dwg. the catch is, the logic symbols are made from lines, arcs, connected together to create a symbol. they are not a block as a whole. so can we do it? how? any method?
 
-saas enterprise quality
+if you build that, am i able to import another diagram?
 
-theme option
-
-good tracing capability when selecting input/output/logic symbol/wire
-
-information panes
-
-logic view/simulator/builder should have full screen, autofit, but still viewable/readable/clear on any screen size, no dragging of screen if possible only for zoom.
-
-ability to interpret logic diagram like on the screenshot when imported,
-
-when importing, there should be review for correction if not sure what to import
-
-importing screenshot should recognize correct logic symbols and make it work as intended
-
-if possible, build a library for logic gates and symbols for better recognition
-
-if there is a push button (CRT) from photo, it should have a button that send signal to that input
-
-inputs and outputs have multiple or single address or hardwire from IRP ARP/ CRT display
+i want to be like a foxboro dark themed, with details/information when clicking the inputs or outputs. is the input click allowed multiple select ? (multiple trigger state conditions?) for simulation function.?
 
 This project was built with [Lovable](https://lovable.dev).
 
 ## Build with Lovable
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/fa86f172-8ca5-49dc-974c-efd67a5e4ba0).
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/2bb8d414-5a90-4079-b727-a1bf817acbc0).
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
 - **Stay in sync**: every change made in Lovable is committed straight to this repository.

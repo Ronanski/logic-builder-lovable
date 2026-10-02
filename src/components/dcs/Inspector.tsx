@@ -1,7 +1,7 @@
 import { Trash2, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
-import { inputCount, isSink, isSource, portName, SYMBOLS } from "@/lib/logic/library";
+import { GATE_STYLES, inputCount, isGate, isSink, isSource, MAX_GATE_INPUTS, portName, SYMBOLS } from "@/lib/logic/library";
 import { inputsOf, type SimState } from "@/lib/logic/engine";
-import type { Diagram, LogicNode, NodeType, Selection, SignalSource } from "@/lib/logic/types";
+import type { Diagram, GateStyle, LogicNode, NodeType, Selection, SignalSource } from "@/lib/logic/types";
 import { GlyphPreview } from "./Glyph";
 
 const field = "w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring";
@@ -95,12 +95,27 @@ export function Inspector({ d, sel, sim, mode, trace, onSelect, onChange, onDele
             <textarea disabled={!edit} rows={Math.max(2, n.addresses.length)} className={`${field} font-mono`} value={n.addresses.join("\n")}
               onChange={(e) => onChange(n.id, { addresses: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })} /></label>
         </>}
-        {!io && <label className="block space-y-1"><span className="text-xs text-muted-foreground">Label</span>
+        {!io && n.type !== "TEXT" && <label className="block space-y-1"><span className="text-xs text-muted-foreground">Label</span>
           <input disabled={!edit} className={field} value={n.label} onChange={(e) => onChange(n.id, { label: e.target.value })} /></label>}
+        {n.type === "TEXT" && <>
+          <label className="block space-y-1"><span className="text-xs text-muted-foreground">Text</span>
+            <textarea disabled={!edit} rows={3} className={field} value={n.label} onChange={(e) => onChange(n.id, { label: e.target.value })} /></label>
+          <label className="block space-y-1"><span className="text-xs text-muted-foreground">Font size</span>
+            <input disabled={!edit} type="number" min={6} max={72} className={field} value={n.fontSize ?? 12} onChange={(e) => onChange(n.id, { fontSize: Math.max(6, Math.min(72, Number(e.target.value) || 12)) })} /></label>
+        </>}
+        {isGate(n.type) && <label className="block space-y-1"><span className="text-xs text-muted-foreground">Symbol style</span>
+          <select disabled={!edit} className={field} value={n.style ?? ""} onChange={(e) => onChange(n.id, { style: (e.target.value || undefined) as GateStyle | undefined })}>
+            <option value="">Diagram default ({GATE_STYLES.find((g) => g.id === (d.gateStyle ?? "dcs"))?.name})</option>
+            {GATE_STYLES.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select></label>}
         {def.category === "Timer" && <label className="block space-y-1"><span className="text-xs text-muted-foreground">Time (seconds)</span>
           <input disabled={!edit} type="number" min={0.1} step={0.1} className={field} value={n.sec ?? 1} onChange={(e) => onChange(n.id, { sec: Math.max(0.1, Number(e.target.value)) })} /></label>}
-        {def.variableInputs && <label className="block space-y-1"><span className="text-xs text-muted-foreground">Inputs</span>
-          <input disabled={!edit} type="number" min={2} max={8} className={field} value={inputCount(n)} onChange={(e) => onChange(n.id, { inputs: Number(e.target.value) })} /></label>}
+        {def.variableInputs && <div className="space-y-1"><span className="text-xs text-muted-foreground">Inputs (2–{MAX_GATE_INPUTS})</span>
+          <div className="flex gap-1">
+            <button disabled={!edit || inputCount(n) <= 2} onClick={() => onChange(n.id, { inputs: inputCount(n) - 1 })} className="w-9 rounded-md border font-mono disabled:opacity-40" aria-label="Remove input">−</button>
+            <input disabled={!edit} type="number" min={2} max={MAX_GATE_INPUTS} className={`${field} text-center`} value={inputCount(n)} onChange={(e) => onChange(n.id, { inputs: Number(e.target.value) })} />
+            <button disabled={!edit || inputCount(n) >= MAX_GATE_INPUTS} onClick={() => onChange(n.id, { inputs: inputCount(n) + 1 })} className="w-9 rounded-md border font-mono disabled:opacity-40" aria-label="Add input">+</button>
+          </div></div>}
         {n.note && <p className="rounded-md border border-trace-up/40 bg-trace-up/10 p-2 text-xs">{n.note}</p>}
       </section>
 

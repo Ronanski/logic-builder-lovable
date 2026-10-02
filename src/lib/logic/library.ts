@@ -1,6 +1,6 @@
 import type { LogicNode, NodeType, SignalSource } from "./types";
 
-export type SymbolCategory = "Input" | "Logic" | "Timer" | "Memory" | "Output";
+export type SymbolCategory = "Input" | "Logic" | "Timer" | "Memory" | "Output" | "Annotation";
 
 export interface SymbolDef {
   type: NodeType;
@@ -104,7 +104,20 @@ export const SYMBOLS: Record<NodeType, SymbolDef> = {
     description: "Pulse signal for on/off control.",
     recognition: "Box with up and down triangles ▲▼.",
   },
+  TEXT: {
+    type: "TEXT", name: "Text / note", category: "Annotation", outputs: 0, defaultInputs: 0,
+    description: "Free text label for titles, notes and remarks. Has no effect on the logic.",
+    recognition: "Free-standing text not attached to a symbol.",
+  },
 };
+
+export const MAX_GATE_INPUTS = 32;
+export const GATE_STYLES = [
+  { id: "dcs", name: "DCS (bar + square/circle)" },
+  { id: "traditional", name: "Traditional (ANSI)" },
+  { id: "block", name: "Block (with names)" },
+] as const;
+export const isGate = (t: NodeType) => t === "AND" || t === "OR" || t === "NOT";
 
 export const SOURCE_LABEL: Record<SignalSource, string> = {
   HARDWIRE: "HW",
@@ -119,13 +132,18 @@ export const isSink = (t: NodeType) => SYMBOLS[t].category === "Output";
 
 export function inputCount(n: LogicNode) {
   const d = SYMBOLS[n.type];
-  if (d.variableInputs) return Math.max(2, Math.min(8, n.inputs ?? d.defaultInputs));
+  if (d.variableInputs) return Math.max(2, Math.min(MAX_GATE_INPUTS, n.inputs ?? d.defaultInputs));
   return d.defaultInputs;
 }
 
 export function nodeSize(n: LogicNode) {
   const t = n.type;
   if (isSource(t) || isSink(t)) return { w: 230, h: 40 };
+  if (t === "TEXT") {
+    const fs = n.fontSize ?? 12;
+    const lines = (n.label || " ").split("\n");
+    return { w: Math.max(30, Math.ceil(Math.max(...lines.map((l) => l.length)) * fs * 0.62) + 8), h: Math.ceil(lines.length * fs * 1.3) + 6 };
+  }
   if (t === "AND" || t === "OR") return { w: 60, h: Math.max(40, inputCount(n) * 20) };
   if (t === "NOT") return { w: 32, h: 28 };
   if (t === "SR") return { w: 48, h: 60 };
@@ -154,18 +172,20 @@ export function newNode(type: NodeType, x: number, y: number, id: string): Logic
   const d = SYMBOLS[type];
   return {
     id, type, x, y,
-    label: d.name,
+    label: type === "TEXT" ? "Text" : d.name,
     tag: isSource(type) || isSink(type) ? "" : undefined,
     service: isSource(type) || isSink(type) ? d.name : undefined,
     addresses: [],
     source: isSource(type) ? (type === "PB" ? "CRT" : "HARDWIRE") : isSink(type) ? "DCS" : undefined,
     sec: d.category === "Timer" ? 1 : undefined,
     inputs: d.variableInputs ? 2 : undefined,
+    fontSize: type === "TEXT" ? 12 : undefined,
   };
 }
 
 export function recognitionGuide() {
   return Object.values(SYMBOLS)
+    .filter((s) => s.category !== "Annotation")
     .map((s) => `- ${s.type}: ${s.name}. Looks like: ${s.recognition}`)
     .join("\n");
 }

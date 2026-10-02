@@ -60,6 +60,16 @@
   --color-trace-down: var(--trace-down);
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-panel: var(--panel);
+  --color-surface: var(--surface);
+  --color-grid-strong: var(--grid-strong);
+  --color-drawing: var(--drawing);
+  --color-drawing-muted: var(--drawing-muted);
+  --color-signal: var(--signal);
+  --color-ok: var(--ok);
+  --color-warning: var(--warning);
+  --color-selected: var(--selected);
+  --color-overlay: var(--overlay);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -71,6 +81,16 @@
 }
 
 :root {
+  --panel: oklch(0.18 0.01 240);
+  --surface: oklch(0.205 0.01 240);
+  --grid-strong: oklch(0.3 0.016 230 / 45%);
+  --drawing: oklch(0.8 0.018 210);
+  --drawing-muted: oklch(0.54 0.018 220);
+  --signal: oklch(0.82 0.17 185);
+  --ok: oklch(0.74 0.17 150);
+  --warning: oklch(0.82 0.17 82);
+  --selected: oklch(0.82 0.17 185 / 10%);
+  --overlay: oklch(0.05 0.006 240 / 80%);
   --radius: 0.5rem;
   --background: oklch(0.975 0.004 240);
   --foreground: oklch(0.22 0.02 250);

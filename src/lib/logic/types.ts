@@ -15,7 +15,10 @@ export type NodeType =
   | "LAMP"
   | "ANN"
   | "SV"
-  | "PULSE_SIG";
+  | "PULSE_SIG"
+  | "TEXT";
+
+export type GateStyle = "dcs" | "traditional" | "block";
 
 export type SignalSource = "HARDWIRE" | "IRP" | "ARP" | "CRT" | "DCS";
 
@@ -32,6 +35,11 @@ export interface LogicNode {
   sec?: number;
   inputs?: number;
   note?: string;
+  /** Elements sharing a group id move/select together */
+  group?: string;
+  /** Per-symbol override of the diagram gate style */
+  style?: GateStyle;
+  fontSize?: number;
 }
 
 export interface Wire {
@@ -47,6 +55,7 @@ export interface Diagram {
   name: string;
   nodes: LogicNode[];
   wires: Wire[];
+  gateStyle?: GateStyle;
 }
 
 export type Selection = { kind: "node" | "wire"; id: string } | null;

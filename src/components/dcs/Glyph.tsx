@@ -1,9 +1,9 @@
 import { inputCount, isSink, isSource, nodeSize, portName, SOURCE_LABEL, SYMBOLS } from "@/lib/logic/library";
-import type { LogicNode } from "@/lib/logic/types";
+import type { GateStyle, LogicNode } from "@/lib/logic/types";
 
 const cut = (s: string | undefined, n: number) => (!s ? "" : s.length > n ? s.slice(0, n - 1) + "…" : s);
 
-export function Glyph({ node, on, pressed, remaining }: { node: LogicNode; on?: boolean; pressed?: boolean; remaining?: number | null }) {
+export function Glyph({ node, on, pressed, remaining, gateStyle }: { node: LogicNode; on?: boolean; pressed?: boolean; remaining?: number | null; gateStyle?: GateStyle }) {
   const { w, h } = nodeSize(node);
   const t = node.type;
   const stroke = "stroke-foreground";
@@ -54,7 +54,68 @@ export function Glyph({ node, on, pressed, remaining }: { node: LogicNode; on?: 
     );
   }
 
-  if (t === "AND" || t === "OR") {
+  if (t === "TEXT") {
+    const fs = node.fontSize ?? 12;
+    const lines = (node.label || " ").split("\n");
+    return (
+      <g>
+        <rect width={w} height={h} className="fill-transparent" />
+        {lines.map((l, i) => (
+          <text key={i} x={4} y={3 + fs * (i + 1) * 1.15} className="fill-foreground font-mono" fontSize={fs}>{l}</text>
+        ))}
+      </g>
+    );
+  }
+
+  if (t === "AND" || t === "OR" || t === "NOT") {
+    const style = node.style ?? gateStyle ?? "dcs";
+    const k = inputCount(node);
+    const ys = Array.from({ length: k }, (_, i) => (h * (i + 1)) / (k + 1));
+    const body = `${activeFill} ${on ? "stroke-signal-on" : stroke}`;
+    if (style === "block") {
+      const sym = t === "AND" ? "&" : t === "OR" ? "≥1" : "1";
+      return (
+        <g>
+          {ys.map((y, i) => <line key={i} x1={0} y1={y} x2={8} y2={y} className={stroke} strokeWidth={1.3} />)}
+          <rect x={8} y={1} width={w - 16} height={h - 2} className={body} strokeWidth={1.4} />
+          <line x1={w - 8} y1={h / 2} x2={w} y2={h / 2} className={stroke} strokeWidth={1.3} />
+          {t === "NOT" && <circle cx={w - 8} cy={h / 2} r={2.6} className={`fill-card ${stroke}`} strokeWidth={1.2} />}
+          <text x={w / 2} y={h / 2 + 4} textAnchor="middle" className="fill-foreground font-mono" fontSize={t === "NOT" ? 9 : 12} fontWeight={700}>{sym}</text>
+          <text x={w / 2} y={-3} textAnchor="middle" className="fill-muted-foreground font-mono" fontSize={7.5}>{t}</text>
+        </g>
+      );
+    }
+    if (style === "traditional") {
+      if (t === "NOT") return (
+        <g>
+          <line x1={0} y1={h / 2} x2={5} y2={h / 2} className={stroke} strokeWidth={1.3} />
+          <path d={`M5 3 L${w - 9} ${h / 2} L5 ${h - 3} Z`} className={body} strokeWidth={1.3} />
+          <circle cx={w - 6} cy={h / 2} r={3} className={`fill-card ${stroke}`} strokeWidth={1.2} />
+        </g>
+      );
+      const L = 12, R = w - 4;
+      const d = t === "AND"
+        ? `M${L} 1 H${R - h / 2} A${h / 2} ${h / 2 - 1} 0 0 1 ${R - h / 2} ${h - 1} H${L} Z`
+        : `M${L - 2} 1 Q${R - 14} 1 ${R} ${h / 2} Q${R - 14} ${h - 1} ${L - 2} ${h - 1} Q${L + 8} ${h / 2} ${L - 2} 1 Z`;
+      return (
+        <g>
+          {ys.map((y, i) => <line key={i} x1={0} y1={y} x2={t === "OR" ? L + 2 : L} y2={y} className={stroke} strokeWidth={1.3} />)}
+          <path d={d} className={body} strokeWidth={1.4} />
+          <line x1={R} y1={h / 2} x2={w} y2={h / 2} className={stroke} strokeWidth={1.3} />
+        </g>
+      );
+    }
+    if (t === "NOT") {
+      return (
+        <g>
+          <text x={w / 2} y={-3} textAnchor="middle" className="fill-muted-foreground font-mono" fontSize={8}>NOT</text>
+          <rect x={6} y={6} width={20} height={16} className={`${activeFill} ${stroke}`} strokeWidth={1.3} />
+          <path d="M6 6 L26 22 M26 6 L6 22" className={stroke} strokeWidth={1.1} />
+          <line x1={0} y1={14} x2={6} y2={14} className={stroke} strokeWidth={1.3} />
+          <line x1={26} y1={14} x2={32} y2={14} className={stroke} strokeWidth={1.3} />
+        </g>
+      );
+    }
     return (
       <g>
         <rect width={w} height={h} className="fill-transparent" />
@@ -66,18 +127,6 @@ export function Glyph({ node, on, pressed, remaining }: { node: LogicNode; on?: 
           <circle cx={37} cy={h / 2} r={14} className={`${activeFill} ${stroke}`} strokeWidth={1.3} />
         )}
         <text x={37} y={h / 2 + 3.5} textAnchor="middle" className="fill-foreground font-mono" fontSize={10} fontWeight={700}>{t}</text>
-        {Array.from({ length: inputCount(node) }).map((_, i) => null)}
-      </g>
-    );
-  }
-  if (t === "NOT") {
-    return (
-      <g>
-        <text x={w / 2} y={-3} textAnchor="middle" className="fill-muted-foreground font-mono" fontSize={8}>NOT</text>
-        <rect x={6} y={6} width={20} height={16} className={`${activeFill} ${stroke}`} strokeWidth={1.3} />
-        <path d="M6 6 L26 22 M26 6 L6 22" className={stroke} strokeWidth={1.1} />
-        <line x1={0} y1={14} x2={6} y2={14} className={stroke} strokeWidth={1.3} />
-        <line x1={26} y1={14} x2={32} y2={14} className={stroke} strokeWidth={1.3} />
       </g>
     );
   }
@@ -109,11 +158,11 @@ export function Glyph({ node, on, pressed, remaining }: { node: LogicNode; on?: 
   );
 }
 
-export function GlyphPreview({ node }: { node: LogicNode }) {
+export function GlyphPreview({ node, gateStyle }: { node: LogicNode; gateStyle?: GateStyle }) {
   const { w, h } = nodeSize(node);
   return (
     <svg viewBox={`-10 -14 ${w + 20} ${h + 28}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet">
-      <Glyph node={node} />
+      <Glyph node={node} gateStyle={gateStyle} />
     </svg>
   );
 }

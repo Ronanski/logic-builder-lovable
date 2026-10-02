@@ -79,7 +79,7 @@ function normalize(raw: any): Recognition {
       addresses: Array.isArray(n.addresses) ? n.addresses.map(String).filter(Boolean) : [],
       source: SOURCES.includes(n.source) ? n.source : isSource(type) ? (type === "PB" ? "CRT" : "HARDWIRE") : isSink(type) ? "DCS" : undefined,
       sec: SYMBOLS[type].category === "Timer" ? Number(n.sec) || 1 : undefined,
-      inputs: SYMBOLS[type].variableInputs ? Math.max(2, Math.min(8, Number(n.inputs) || 2)) : undefined,
+      inputs: SYMBOLS[type].variableInputs ? Math.max(2, Math.min(32, Number(n.inputs) || 2)) : undefined,
       note: n.note ? String(n.note) : undefined,
       confidence: conf, include: true,
     };
@@ -97,7 +97,7 @@ function normalize(raw: any): Recognition {
   // grow gate inputs to fit referenced ports
   for (const w of wires) {
     const n = nodes.find((x) => x.id === w.to)!;
-    if (SYMBOLS[n.type].variableInputs) n.inputs = Math.max(n.inputs ?? 2, Math.min(8, w.toPort + 1));
+    if (SYMBOLS[n.type].variableInputs) n.inputs = Math.max(n.inputs ?? 2, Math.min(32, w.toPort + 1));
   }
   return { title: String(raw.title ?? "Imported diagram"), nodes, wires, warnings: (raw.warnings ?? []).map(String) };
 }
